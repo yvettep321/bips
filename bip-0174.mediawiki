@@ -65,7 +65,7 @@ be used as a separator and allow for easier unserializer implementation.</ref>.
 Where:
 
 ;<tt><keytype></tt>
-: A compact size unsigned integer representing the type. This compact size unsigned integer must be minimally encoded, i.e. if the value can be represented using one byte, it must be represented as one byte. There can be multiple entries with the same <tt><keytype></tt> within a specific <tt><map></tt>, but the <tt><key></tt> must be unique.
+: A [https://en.bitcoin.it/wiki/Protocol_documentation#Variable_length_integer compact size] unsigned integer representing the type. This compact size unsigned integer must be minimally encoded, i.e. if the value can be represented using one byte, it must be represented as one byte. There can be multiple entries with the same <tt><keytype></tt> within a specific <tt><map></tt>, but the <tt><key></tt> must be unique.
 ;<tt><keylen></tt>
 : The compact size unsigned integer containing the combined length of <tt><keytype></tt> and <tt><keydata></tt>
 ;<tt><valuelen></tt>
@@ -101,7 +101,7 @@ The currently defined global types are as follows:
 | <tt><transaction></tt>
 | The transaction in network serialization. The scriptSigs and witnesses for each input must be empty. The transaction must be in the old serialization format (without witnesses).
 | 0
-|
+| 2
 | 0
 | 174
 |-
@@ -164,19 +164,8 @@ The currently defined global types are as follows:
 | <tt>PSBT_GLOBAL_TX_MODIFIABLE = 0x06</tt>
 | None
 | No key data
-| <tt><single byte boolean> <single byte boolean> <bitvector></tt>
-| A single byte boolean (0 for False, 1 for True) representing whether inputs can be modified, followed by a single byte boolean representing whether outputs can be modified.
-|
-| 0
-| 2
-| [[bip-0370.mediawiki|370]]
-|-
-| SIGHASH_SINGLE Inputs
-| <tt>PSBT_GLOBAL_SIGHASH_SINGLE_INPUTS = 0x07</tt>
-| None
-| No key data
-| <tt><bit vector></tt>
-| A bit vector representing which input indexes use SIGHASH_SINGLE. If the bit for an index is set to 1, then the input and output pair at that index are tied together with SIGHASH_SINGLE and must be moved together.
+| <tt><8-bit uint></tt>
+| An 8 bit little endian unsigned integer as a bitfield for various transaction modification flags. Bit 0 is the Inputs Modifiable Flag and indicates whether inputs can be modified. Bit 1 is the Outputs Modifiable Flag and indicates whether outputs can be modified. Bit 2 is the Has SIGHASH_SINGLE flag and indicates whether the transaction has a SIGHASH_SINGLE signature who's input and output pairing must be preserved. Bit 2 essentially indicates that the Constructor must iterate the inputs to determine whether and how to add an input.
 |
 | 0
 | 2
@@ -246,7 +235,7 @@ The currently defined per-input types are defined as follows:
 | <tt><pubkey></tt>
 | The public key which corresponds to this signature.
 | <tt><signature></tt>
-| The signature as would be pushed to the stack from a scriptSig or witness.
+| The signature as would be pushed to the stack from a scriptSig or witness. The signature should be a valid ECDSA signature corresponding to the pubkey that would return true when verified and not a value that would return false or be invalid otherwise (such as a NULLDUMMY).
 |
 |
 | 0, 2
@@ -431,7 +420,7 @@ The currently defined per-input types are defined as follows:
 | Taproot Key Spend Signature
 | <tt>PSBT_IN_TAP_KEY_SIG = 0x13</tt>
 | None
-| No key data 
+| No key data
 | <tt><signature></tt>
 | The 64 or 65 byte Schnorr signature for key path spending a Taproot output. Finalizers should remove this field after <tt>PSBT_IN_FINAL_SCRIPTWITNESS</tt> is constructed.
 |
@@ -455,7 +444,7 @@ The currently defined per-input types are defined as follows:
 | <tt><control block></tt>
 | The control block for this leaf as specified in BIP 341. The control block contains the merkle tree path to this leaf.
 | <tt><script> <8-bit uint></tt>
-| The script for this leaf as would be provided in the witness stack followed by the single byte leaf version. Note that the leaves included in this field should be those that the signers of this input are expected to be able to sign for. Finalizers should remove this field after <tt>PSBT_IN_FINAL_SCRIPTWITNESS</tt> is constructed. Finalizers should remove this field after <tt>PSBT_IN_FINAL_SCRIPTWITNESS</tt> is constructed.
+| The script for this leaf as would be provided in the witness stack followed by the single byte leaf version. Note that the leaves included in this field should be those that the signers of this input are expected to be able to sign for. Finalizers should remove this field after <tt>PSBT_IN_FINAL_SCRIPTWITNESS</tt> is constructed.
 |
 |
 | 0, 2
@@ -476,7 +465,7 @@ The currently defined per-input types are defined as follows:
 | <tt>PSBT_IN_TAP_INTERNAL_KEY = 0x17</tt>
 | None
 | No key data
-| <tt><pubkey></tt>
+| <tt><xonlypubkey></tt>
 | The X-only pubkey used as the internal key in this output. Finalizers should remove this field after <tt>PSBT_IN_FINAL_SCRIPTWITNESS</tt> is constructed.
 |
 |
@@ -487,7 +476,7 @@ The currently defined per-input types are defined as follows:
 | <tt>PSBT_IN_TAP_MERKLE_ROOT = 0x18</tt>
 | None
 | No key data
-| <tt><pubkey></tt>
+| <tt><32-byte hash></tt>
 | The 32 byte Merkle root hash. Finalizers should remove this field after <tt>PSBT_IN_FINAL_SCRIPTWITNESS</tt> is constructed.
 |
 |
@@ -548,7 +537,7 @@ determine which outputs are change outputs and verify that the change is returni
 | <tt>PSBT_OUT_BIP32_DERIVATION = 0x02</tt>
 | <tt><public key></tt>
 | The public key
-| <tt><{32-bit uint> <32-bit uint>*</tt>
+| <tt><32-bit uint> <32-bit uint>*</tt>
 | The master key fingerprint concatenated with the derivation path of the public key. The derivation path is represented as 32-bit little endian unsigned integer indexes concatenated with each other. Public keys are those needed to spend this output.
 |
 |
@@ -581,7 +570,7 @@ determine which outputs are change outputs and verify that the change is returni
 | <tt>PSBT_OUT_TAP_INTERNAL_KEY = 0x05</tt>
 | None
 | No key data
-| <tt><pubkey></tt>
+| <tt><xonlypubkey></tt>
 | The X-only pubkey used as the internal key in this output.
 |
 |
@@ -594,17 +583,6 @@ determine which outputs are change outputs and verify that the change is returni
 | No key data
 | <tt>{<8-bit uint depth> <8-bit uint leaf version> <scriptlen> <script>}*</tt>
 | One or more tuples representing the depth, leaf version, and script for a leaf in the Taproot tree, allowing the entire tree to be reconstructed. The tuples must be in depth first search order so that the tree is correctly reconstructed. Each tuple is an 8-bit unsigned integer representing the depth in the Taproot tree for this script, an 8-bit unsigned integer representing the leaf version, the length of the script as a compact size unsigned integer, and the script itself.
-|
-|
-| 0, 2
-| [[bip-0371.mediawiki|371]]
-|-
-| Taproot Leaf Script
-| <tt>PSBT_OUT_TAP_LEAF_SCRIPT = 0x06</tt>
-| <tt><control block></tt>
-| The control block for this leaf as specified in BIP 341. The control block contains the merkle tree path to this leaf.
-| <tt><script></tt>
-| The script for this leaf as would be provided in the witness stack.
 |
 |
 | 0, 2
@@ -798,6 +776,8 @@ Or, for participants performing fA(psbt) and fB(psbt): Combine(fA(psbt), fB(psbt
 
 The Input Finalizer must only accept a PSBT.
 For each input, the Input Finalizer determines if the input has enough data to pass validation. If it does, it must construct the <tt>0x07</tt> Finalized scriptSig and <tt>0x08</tt> Finalized scriptWitness and place them into the input key-value map.
+If scriptSig is empty for an input, <tt>0x07</tt> should remain unset rather than assigned an empty array.
+Likewise, if no scriptWitness exists for an input, <tt>0x08</tt> should remain unset rather than assigned an empty array.
 All other data except the UTXO and unknown fields in the input key-value map should be cleared from the PSBT. The UTXO should be kept to allow Transaction Extractors to verify the final network serialized transaction.
 
 ===Transaction Extractor===
@@ -839,6 +819,9 @@ If an updater is updating a PSBT and needs to add a field that is only available
 New fields should first be proposed on the bitcoin-dev mailing list.
 If a field requires significant description as to its usage, it should be accompanied by a separate BIP.
 The field must be added to the field listing tables in the Specification section.
+Although some PSBT version 0 implementations encode types as uint8_t rather than compact size,
+it is still safe to add >0xFD fields to PSBT 0, because these old parsers ignore
+unknown fields, and <keytype> is prefixed by its length. 
 
 ===Procedure For New Versions===
 
